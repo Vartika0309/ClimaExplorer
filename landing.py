@@ -206,42 +206,74 @@ def landing_page():
     st.markdown("<div style='margin-top: 20px;'></div>", unsafe_allow_html=True)
 
     # --- THE 3D GLOBE ---
+    # Ensure Streamlit's iframe container is transparent
+    st.markdown("""
+        <style>
+        iframe {
+            background-color: transparent !important;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
     globe_html = """
     <!DOCTYPE html>
-    <html>
+    <html lang="en">
     <head>
+        <meta charset="utf-8">
         <style> 
-            body { margin: 0; background-color: transparent; overflow: hidden; display: flex; justify-content: center; align-items: center; }
-            #globeViz { width: 100%; height: 100%; cursor: grab; }
-            #globeViz:active { cursor: grabbing; }
+            html, body { 
+                margin: 0; 
+                padding: 0; 
+                width: 100%; 
+                height: 100%; 
+                background: transparent !important; 
+                overflow: hidden; 
+                display: flex; 
+                justify-content: center; 
+                align-items: center; 
+            }
+            #globeViz { 
+                width: 100%; 
+                height: 480px; 
+                background: transparent !important;
+                cursor: grab; 
+            }
+            #globeViz:active { 
+                cursor: grabbing; 
+            }
         </style>
-        <script src="//unpkg.com/globe.gl"></script>
+        <script src="https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.min.js"></script>
+        <script src="https://cdn.jsdelivr.net/npm/globe.gl@2.32.0/dist/globe.gl.min.js"></script>
     </head>
-    <body class="animate-fade-in">
+    <body>
         <div id="globeViz"></div>
         <script>
             const elem = document.getElementById('globeViz');
+            
             const world = Globe()(elem)
-                .globeImageUrl('//unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
-                .bumpImageUrl('//unpkg.com/three-globe/example/img/earth-topology.png')
+                .globeImageUrl('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-blue-marble.jpg')
+                .bumpImageUrl('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png')
                 .showAtmosphere(true)
                 .atmosphereColor('#38bdf8')
                 .atmosphereAltitude(0.2)
-                .backgroundColor('rgba(0,0,0,0)');
+                .backgroundColor('rgba(0, 0, 0, 0)')
+                .width(window.innerWidth || 900)
+                .height(480);
 
             world.controls().autoRotate = true;
-            world.controls().autoRotateSpeed = 1.2;
-            world.controls().minDistance = 200;
-            world.controls().maxDistance = 400;
+            world.controls().autoRotateSpeed = 1.0;
+            world.controls().enableZoom = false;
+            world.pointOfView({ altitude: 2.3 });
+
+            window.addEventListener('resize', () => {
+                world.width(window.innerWidth);
+            });
         </script>
     </body>
     </html>
     """
-    # Restored to components.html so the JavaScript executes properly!
-    components.html(globe_html, height=450)
-
-    st.markdown("<div style='margin-top: 40px;'></div>", unsafe_allow_html=True)
-
+    components.html(globe_html, height=500)
+    
     # --- COPERNICUS STATS ---
     st.markdown("""
         <div class="glass-card animate-slide-up" style="text-align: center; margin-bottom: 2rem;">

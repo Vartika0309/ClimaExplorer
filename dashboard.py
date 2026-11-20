@@ -7,55 +7,52 @@ import plotly.express as px
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import os
-import base64
 
-# --- Repo_1 imports for 3D Globe & Graphs ---
 from modules.data_loader import load_temperature, load_precipitation, load_pressure
 from modules.visualization import create_globe, create_timeseries
 
-# ── Dataset Registry (from Repo_2 — for 2D Heatmap & Comparison) ─────────────
+# ── Dataset Registry ────────────────────────────────────────────────────────
 DATA_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
 
 DATASETS = {
-    "Air Temperature (NCEP)":   {"file": "air.mon.mean.nc",   "var": "air",   "unit": "C",       "label": "Temperature (C)",   "scale": 1.0},
+    "Air Temperature (NCEP)":   {"file": "air.mon.mean.nc",   "var": "air",   "unit": "°C",       "label": "Temperature (°C)",   "scale": 1.0},
     "Wind Speed U-component":   {"file": "uwnd.mon.mean.nc",  "var": "uwnd",  "unit": "m/s",     "label": "U-Wind (m/s)",       "scale": 1.0},
     "Precipitation Rate":       {"file": "sample_data.nc",    "var": "prate", "unit": "mm/day",  "label": "Precip (mm/day)",    "scale": 86400.0},
 }
 
-@st.cache_data
-def load_nc(filename, scale=1.0):
+@st.cache_resource
+def load_nc(filename):
+    """Open NetCDF lazily without serializing full datasets into cache memory."""
     path = os.path.join(DATA_DIR, filename)
-    ds = xr.open_dataset(path)
-    return ds, scale
+    return xr.open_dataset(path)
 
-# Pre-load all datasets at startup (uses cache after first load)
-all_ds = {name: load_nc(info["file"], info["scale"]) for name, info in DATASETS.items()}
+def get_all_datasets():
+    """Retrieve datasets on demand."""
+    return {name: (load_nc(info["file"]), info["scale"]) for name, info in DATASETS.items()}
 
-
-# ── Repo_2 Helper functions ──────────────────────────────────────────────────
+# ── Helper Functions & Cached Calculations ──────────────────────────────────
 def get_slice(dataset, variable, year, month, scale=1.0):
-    """Get a single month's lat/lon slice, applying unit scale."""
-    t  = dataset.sel(time=f"{year}-{month:02d}", method="nearest")
+    """Extract a single month's lat/lon slice."""
+    t = dataset.sel(time=f"{year}-{month:02d}", method="nearest")
     da = t[variable] * scale
     return da
 
 def slice_to_df(data_array, var_name):
     """Convert 2D DataArray to a DataFrame for plotting."""
-    df = data_array.to_dataframe().reset_index().dropna(subset=[var_name])
-    return df
+    return data_array.to_dataframe().reset_index().dropna(subset=[var_name])
 
-def global_mean_timeseries(dataset, variable):
-    """Return a DataFrame with monthly global mean over time."""
-    gmean = dataset[variable].mean(dim=['lat', 'lon'])
-    df = gmean.to_dataframe().reset_index()
+@st.cache_data
+def get_annual_mean(filename, variable, scale=1.0):
+    """Compute and cache only the small aggregated annual mean DataFrame (~70-90 rows)."""
+    path = os.path.join(DATA_DIR, filename)
+    with xr.open_dataset(path) as ds:
+        gmean = ds[variable].mean(dim=['lat', 'lon'])
+        df = gmean.to_dataframe().reset_index()
     df['time'] = pd.to_datetime(df['time'])
-    return df
-
-def annual_mean_timeseries(dataset, variable):
-    """Return annual mean time series."""
-    df = global_mean_timeseries(dataset, variable)
     df['year'] = df['time'].dt.year
-    return df.groupby('year')[variable].mean().reset_index()
+    ann = df.groupby('year')[variable].mean().reset_index()
+    ann[variable] = ann[variable] * scale
+    return ann
 
 def get_color_config(var_name, df, col):
     """Return (colorscale, vmin, vmax) appropriate for the variable type."""
@@ -71,15 +68,15 @@ def get_color_config(var_name, df, col):
 
 
 def dashboard_page():
+    all_ds = get_all_datasets()
+
     # --- DASHBOARD UI STYLES ---
     st.markdown("""
         <style>
-        /* Change the background of the entire app ONLY when on the dashboard */
         [data-testid="stApp"] {
             background: linear-gradient(135deg, #020617 0%, #0f172a 100%) !important;
         }
 
-        /* Force text inside the white forms and containers to be dark */
         [data-testid="stForm"] p, 
         [data-testid="stForm"] span, 
         [data-testid="stForm"] label p,
@@ -88,7 +85,6 @@ def dashboard_page():
             font-weight: 600 !important;
         }
         
-        /* Force headers inside containers to be dark */
         [data-testid="stForm"] h1, 
         [data-testid="stForm"] h2, 
         [data-testid="stForm"] h3,
@@ -98,7 +94,6 @@ def dashboard_page():
             color: #0f172a !important; 
         }
 
-        /* Lighten the dark input boxes so they match the light card better */
         [data-testid="stForm"] [data-testid="stTextInput"] input {
             background-color: #f8fafc !important; 
             color: #0f172a !important;
@@ -106,18 +101,14 @@ def dashboard_page():
             box-shadow: none !important;
         }
         
-        /* Fix placeholder text color */
         [data-testid="stForm"] [data-testid="stTextInput"] input::placeholder {
             color: #94a3b8 !important;
         }
                 
-        /* --- SIDEBAR NAVIGATION PILLS --- */
-        /* Hide the native radio button circles entirely */
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label > div:first-child {
             display: none !important;
         }
 
-        /* Style the labels as professional navigation pills */
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label {
             padding: 12px 16px !important;
             margin-bottom: 6px !important;
@@ -127,13 +118,11 @@ def dashboard_page():
             transition: all 0.2s ease-in-out !important;
         }
 
-        /* Hover state for the pills */
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] > label:hover {
             background-color: #f8fafc !important;
             border: 1px solid #e2e8f0 !important;
         }
 
-        /* Text styling inside the pills */
         [data-testid="stSidebar"] .stRadio div[role="radiogroup"] p {
             font-weight: 600 !important;
             color: #475569 !important; 
@@ -147,7 +136,6 @@ def dashboard_page():
         st.markdown("<h2 style='text-align: center; color: #003366; font-weight: 800;'>Control Panel</h2>", unsafe_allow_html=True)
         st.markdown("<hr style='border-color: rgba(0,0,0,0.1); margin-top: 5px; margin-bottom: 25px;'>", unsafe_allow_html=True)
         
-        # Only 3 options: Analysis, Comparison, Time Story
         selected_tab = st.radio(
             "Navigation",
             ["🔬 Analysis", "📊 Comparison", "🎬 Time Story"],
@@ -157,7 +145,7 @@ def dashboard_page():
         st.markdown("<br><br><br>", unsafe_allow_html=True)
 
     # ═══════════════════════════════════════════════════════════════════
-    # TAB 1 — ANALYSIS (2D from Repo_2, 3D from Repo_1, Graphs from Repo_1)
+    # TAB 1 — ANALYSIS (2D Heatmap, 3D Globe, Trend Line)
     # ═══════════════════════════════════════════════════════════════════
     if selected_tab == "🔬 Analysis":
         st.markdown("<h1 style='color: #f8fafc;'>Multidimensional <span style='color: #10b981;'>Analysis</span></h1>", unsafe_allow_html=True)
@@ -167,14 +155,12 @@ def dashboard_page():
         with st.container(border=True):
             c1, c2, c3 = st.columns(3)
             
-            # Dataset selector for 2D (Repo_2 style)
             dataset_name = c1.selectbox("Dataset", list(DATASETS.keys()))
             info = DATASETS[dataset_name]
             ds_2d, _scale = all_ds[dataset_name]
             var = info["var"]
             unit = info["unit"]
             
-            # Time selection
             times = pd.DatetimeIndex(ds_2d['time'].values)
             years = sorted(times.year.unique())
             sel_year = c2.slider("Year", int(years[0]), int(years[-1]), int(years[-1]))
@@ -184,7 +170,6 @@ def dashboard_page():
         
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- Variable mapping for Repo_1 3D Globe ---
         variable_map = {
             "Air Temperature (NCEP)": ("Temperature", "temperature", load_temperature),
             "Wind Speed U-component": ("Pressure", "pressure", load_pressure),
@@ -195,7 +180,7 @@ def dashboard_page():
         # ── 2D + 3D Side by Side ──
         col_2d, col_3d = st.columns(2)
 
-        # --- LEFT: 2D Heatmap from Repo_2 ---
+        # --- LEFT: 2D Heatmap ---
         with col_2d:
             st.subheader("🗺️ 2D Global Heatmap")
             try:
@@ -234,20 +219,17 @@ def dashboard_page():
             except Exception as e:
                 st.error(f"Could not render 2D map: {e}")
 
-        # --- RIGHT: 3D Globe from Repo_1 ---
+        # --- RIGHT: 3D Globe ---
         with col_3d:
             st.subheader("🌍 3D Globe View")
             try:
-                # Find matching time index for 3D Globe based on selected year and month
                 times_3d = pd.DatetimeIndex(ds_2d['time'].values)
                 matching_indices = np.where((times_3d.year == sel_year) & (times_3d.month == sel_month))[0]
                 time_index = int(matching_indices[0]) if len(matching_indices) > 0 else 0
 
-                # Load from Repo_1 data_loader using calculated time_index
                 ds_3d, df_3d = repo1_loader(time_index)
                 fig_3d = create_globe(df_3d, repo1_var)
                 
-                # Restyle to match the dark theme
                 fig_3d.update_layout(
                     height=520,
                     paper_bgcolor='rgba(0,0,0,0)',
@@ -268,21 +250,19 @@ def dashboard_page():
         st.markdown("<br>", unsafe_allow_html=True)
         st.markdown("---")
 
-        # ── Graphs from Repo_1 (below the 2D/3D views) ──
+        # ── Trend Analysis & Context ──
         st.markdown("<h2 style='color: #f8fafc;'>📈 Trend Analysis & <span style='color: #38bdf8;'>Context</span></h2>", unsafe_allow_html=True)
         st.markdown("<p style='color: #94a3b8;'>Global trends and seasonal patterns from the full dataset timeline.</p>", unsafe_allow_html=True)
 
-        # --- Annual Trend (from Repo_2's Global Context section) ---
         col_t1, col_t2 = st.columns([2, 1])
 
         with col_t1:
             try:
-                ann_df = annual_mean_timeseries(ds_2d, var)
-                ann_df[var] *= info["scale"]
+                ann_df = get_annual_mean(info["file"], var, info["scale"]).copy()
                 
                 fig_annual = px.line(ann_df, x='year', y=var,
                                  labels={'year': 'Year', var: unit},
-                                 title=f"Annual Global Mean (1948–2026)")
+                                 title="Annual Global Mean")
                 trend = np.poly1d(np.polyfit(ann_df['year'], ann_df[var], 1))(ann_df['year'])
                 fig_annual.add_trace(go.Scatter(x=ann_df['year'], y=trend, mode='lines',
                                           name='Long-term Trend', line=dict(color='#ef4444', dash='dash', width=2)))
@@ -323,7 +303,7 @@ def dashboard_page():
 
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- Time Series from Repo_1 (point-based) ---
+        # --- Location-based Time Series ---
         st.markdown("<h3 style='color: #f8fafc;'>📍 Location-based Time Series</h3>", unsafe_allow_html=True)
         
         with st.container(border=True):
@@ -350,7 +330,7 @@ def dashboard_page():
             st.error(f"Could not render time series: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
-    # TAB 2 — COMPARISON (from Repo_2 Dataset Comparison)
+    # TAB 2 — COMPARISON
     # ═══════════════════════════════════════════════════════════════════
     elif selected_tab == "📊 Comparison":
         st.markdown("<h1 style='color: #f8fafc;'>Dataset <span style='color: #38bdf8;'>Comparison</span></h1>", unsafe_allow_html=True)
@@ -358,17 +338,17 @@ def dashboard_page():
         
         st.markdown("<br>", unsafe_allow_html=True)
 
-        # --- All-Dataset Annual Mean Comparison ---
         colors = {'Air Temperature (NCEP)': '#ef4444',
                   'Wind Speed U-component': '#38bdf8',
                   'Precipitation Rate':     '#10b981'}
 
+        annual_series_map = {}
         fig_compare = go.Figure()
+
         for dname, dinfo in DATASETS.items():
-            d, s  = all_ds[dname]
-            v     = dinfo["var"]
-            ann   = annual_mean_timeseries(d, v)
-            val   = ann[v] * s
+            ann = get_annual_mean(dinfo["file"], dinfo["var"], dinfo["scale"])
+            val = ann[dinfo["var"]]
+            annual_series_map[dname] = val
             zscore = (val - val.mean()) / val.std()
             fig_compare.add_trace(go.Scatter(
                 x=ann['year'], y=zscore, mode='lines',
@@ -379,7 +359,7 @@ def dashboard_page():
         fig_compare.add_hline(y=0, line_color='rgba(255,255,255,0.2)', line_dash='dot')
         fig_compare.update_layout(
             height=480,
-            title="Normalised Annual Global Mean — Temperature vs Wind vs Precipitation (1948–2026)",
+            title="Normalised Annual Global Mean — Temperature vs Wind vs Precipitation",
             paper_bgcolor='rgba(0,0,0,0)', plot_bgcolor='rgba(0,0,0,0.2)',
             font=dict(family='Space Grotesk', color='#e2e8f0'),
             xaxis=dict(title='Year', gridcolor='rgba(255,255,255,0.05)'),
@@ -397,15 +377,8 @@ def dashboard_page():
         st.markdown("<h2 style='color: #f8fafc;'>📐 Correlation <span style='color: #10b981;'>Matrix</span></h2>", unsafe_allow_html=True)
         st.markdown("<p style='color: #94a3b8;'>Pearson correlation between the annual global means of all loaded datasets.</p>", unsafe_allow_html=True)
         
-        combined = {}
-        for dname, dinfo in DATASETS.items():
-            d, s   = all_ds[dname]
-            v   = dinfo["var"]
-            ann = annual_mean_timeseries(d, v)
-            combined[dname] = ann[v].values * s
-
-        min_len = min(len(v) for v in combined.values())
-        corr_df = pd.DataFrame({k: v[:min_len] for k, v in combined.items()}).corr().round(3)
+        min_len = min(len(v) for v in annual_series_map.values())
+        corr_df = pd.DataFrame({k: v.iloc[:min_len].values for k, v in annual_series_map.items()}).corr().round(3)
         
         fig_corr = px.imshow(corr_df,
                              text_auto=True,
@@ -465,7 +438,6 @@ def dashboard_page():
             )
             return f
 
-        # Initialize session state for comparison figures and years
         if "prev_yr_a" not in st.session_state:
             st.session_state.prev_yr_a = None
         if "prev_yr_b" not in st.session_state:
@@ -477,7 +449,6 @@ def dashboard_page():
         if "prev_comp_dataset" not in st.session_state:
             st.session_state.prev_comp_dataset = None
 
-        # Reset session state if the comparison dataset changes
         if st.session_state.prev_comp_dataset != comp_dataset:
             st.session_state.prev_comp_dataset = comp_dataset
             st.session_state.prev_yr_a = None
@@ -485,12 +456,10 @@ def dashboard_page():
             st.session_state.fig_left = None
             st.session_state.fig_right = None
 
-        # Update fig_left only if yr_left changed (or not computed yet)
         if st.session_state.prev_yr_a != yr_left or st.session_state.fig_left is None:
             st.session_state.fig_left = year_map(yr_left)
             st.session_state.prev_yr_a = yr_left
 
-        # Update fig_right only if yr_right changed (or not computed yet)
         if st.session_state.prev_yr_b != yr_right or st.session_state.fig_right is None:
             st.session_state.fig_right = year_map(yr_right)
             st.session_state.prev_yr_b = yr_right
@@ -524,7 +493,6 @@ def dashboard_page():
             )
             st.plotly_chart(fig_diff, use_container_width=True, theme=None)
 
-            # Summary stats
             mean_diff = float(df_diff['diff'].mean())
             sc1, sc2, sc3 = st.columns(3)
             sc1.metric("Mean change", f"{mean_diff:+.2f} {comp_unit}")
@@ -534,7 +502,7 @@ def dashboard_page():
             st.error(f"Could not render difference map: {e}")
 
     # ═══════════════════════════════════════════════════════════════════
-    # TAB 3 — TIME STORY (Video playback)
+    # TAB 3 — TIME STORY
     # ═══════════════════════════════════════════════════════════════════
     elif selected_tab == "🎬 Time Story":
         st.markdown("<h1 style='color: #f8fafc;'>Climate <span style='color: #f59e0b;'>Time Story</span></h1>", unsafe_allow_html=True)
@@ -545,41 +513,10 @@ def dashboard_page():
         video_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "time_story.mp4")
         
         if os.path.exists(video_path):
-            # Read video file and encode to base64 for HTML embedding
-            with open(video_path, "rb") as video_file:
-                video_bytes = video_file.read()
-            
-            video_b64 = base64.b64encode(video_bytes).decode()
-            
-            # Full-width cinematic video player without controls for direct playing
-            st.markdown(f"""
-                <div style="
-                    position: relative; 
-                    border-radius: 16px; 
-                    overflow: hidden; 
-                    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-                    border: 1px solid rgba(56, 189, 248, 0.2);
-                ">
-                    <video 
-                        autoplay 
-                        loop 
-                        muted 
-                        playsinline
-                        style="
-                            width: 100%; 
-                            display: block; 
-                            border-radius: 16px;
-                        "
-                    >
-                        <source src="data:video/mp4;base64,{video_b64}" type="video/mp4">
-                        Your browser does not support the video tag.
-                    </video>
-                </div>
-            """, unsafe_allow_html=True)
+            st.video(video_path, autoplay=True, loop=True, muted=True)
             
             st.markdown("<br>", unsafe_allow_html=True)
             
-            # Info cards below the video
             info_c1, info_c2, info_c3 = st.columns(3)
             with info_c1:
                 st.markdown("""
@@ -603,5 +540,5 @@ def dashboard_page():
                     </div>
                 """, unsafe_allow_html=True)
         else:
-            st.warning("⚠️ Video file not found. Please ensure the video file is present in the Final folder.")
+            st.warning("⚠️ Video file (time_story.mp4) not found in the project root directory.")
             st.info(f"Expected path: {video_path}")

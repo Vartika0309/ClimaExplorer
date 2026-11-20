@@ -19,7 +19,7 @@ def render_navigation():
     nav_links = '<a href="?page=landing" target="_self">Home</a><a href="?page=dashboard" target="_self">Dashboard</a><a href="?page=about" target="_self">About Us</a>'
 
     # The entire header compressed into a single line
-    html_string = f'<div class="header-wrapper"><div style="display: flex; align-items: center; font-size: 24px; font-weight: 900;">{img_html}<span style="color: #38bdf8;">Py</span><span style="color: #10b981;">Clima</span><span style="color: #38bdf8;">Explorer</span></div><div class="nav-links">{nav_links}</div></div>'
+    html_string = f'<div class="header-wrapper"><div style="display: flex; align-items: center; font-size: 24px; font-weight: 900;">{img_html}<span style="color: #10b981;">Clima</span><span style="color: #38bdf8;">Explorer</span></div><div class="nav-links">{nav_links}</div></div>'
     
     st.markdown(html_string, unsafe_allow_html=True)
 
