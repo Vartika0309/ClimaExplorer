@@ -2,7 +2,7 @@
 **Mini Project- IET Lucknow**
 
 ## Overview
-ClimaExplorer is a service which provides 3D representation of climate parameters like temperature, pressure and precipitation.
+ClimaExplorer is a platform which provides 3D representation of climate parameters like temperature, pressure, precipitation, wind and speed.
 
 ## Tech Stack
 - **Frontend:** Streamlit
