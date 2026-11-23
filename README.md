@@ -7,7 +7,10 @@ ClimaExplorer is a service which provides 3D representation of climate parameter
 ## Tech Stack
 - **Frontend:** Streamlit
 - **Data:** Xarray, Pandas
-- **Maps:** Plotly
+- **Calculations:** NumPy
+- **Maps:** Leafmap
+- **Graphs:** Plotly
+  
 
 ## How to Run
 1. Create venv: `python -m venv venv`
