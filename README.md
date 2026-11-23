@@ -8,7 +8,6 @@ ClimaExplorer is a platform which provides 3D representation of climate paramete
 - **Frontend:** Streamlit
 - **Data:** Xarray, Pandas
 - **Calculations:** NumPy
-- **Maps:** Leafmap
 - **Graphs:** Plotly
   
 
