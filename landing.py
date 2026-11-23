@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 
 def landing_page():
 
-    # --- EXTERNAL ASSETS & CSS ---
+    # --- EXTERNAL ASSETS & CSS FOR FRONTEND ---
     st.markdown("""
         <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;600;700;800&display=swap" rel="stylesheet">
         <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
